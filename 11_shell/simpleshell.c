@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <fcntl.h>
 #include <signal.h>
 
@@ -12,7 +13,7 @@ pid_t pid;
 // 명령어와 인자를 구분하는 함수
 int getargs(char *cmd, char **argv);
 
-// 시그널 처리 함수 
+// 3. 시그널 처리 함수 
 void handler(int signo);
 
 int main(){
@@ -30,7 +31,7 @@ int main(){
 	// 인터럽트 같은 신호들은 부모(쉘)가 아닌 자식(실행중인 명령어)에게 전달
 	sigaction(SIGINT, &p_act, NULL);
 	sigaction(SIGQUIT, &p_act, NULL);
-	sigaction(SIGTSTP, &p_act, NULL);
+	//sigaction(SIGTSTP, &p_act, NULL);
 	
 	while(1){
 		is_error = 0;
@@ -59,6 +60,7 @@ int main(){
 
 
 		// 4. 리다이렉션 및 파이프
+		// 4-1 리다이렉션
 		int i;
 		int fd = -1;
 		
@@ -107,10 +109,82 @@ int main(){
 			}
 		}
 		
+		// 4-2 파이프
+		// 명령어 앞 뒤로 구분하기
+		// 앞의 명령어 출력을 뒤의 명령어 입력으로 바꾸기
+		int is_pipe = 0;
+		int pfd[2];
+		int j;
+		
+		// 뒤의 명령어 분할
+		char *argv2[50];
+		
+		// 파이프 유무 확인
+		for(i = 0; i < narg; i++){
+			if(strcmp(argv[i], "|") == 0){
+				is_pipe = 1;
+				argv[i] = NULL;
+
+				for(j = 0; j + i + 1 < narg; j++){
+					argv2[j] = argv[j+i+1];
+				}
+				argv2[j] = NULL;
+			}
+
+		}
 		// 혹시 이전에 에러나오면 명령어 수행하지 말기
 		if(is_error == 1)
 			continue;
+		
+		if (is_pipe) {
+    			// 파이프 생성
+    			if (pipe(pfd) == -1) {
+        			perror("pipe");
+        			exit(1);
+    			}
 
+    			// 첫 번째 자식 프로세스 생성
+    			if ((pid = fork()) == 0) {
+        			// 파이프 출력 연결
+        			close(pfd[0]); 
+				dup2(pfd[1], 1);
+        			close(pfd[1]);
+
+        			// 첫 번째 명령 실행
+        			execvp(argv[0], argv);
+       			 	perror("execvp");
+        			exit(1);
+    			} else if (pid < 0) {
+       			 	perror("fork failed");
+        			exit(1);
+    			}
+
+    			// 두 번째 자식 프로세스 생성
+    			if ((pid = fork()) == 0) {
+        			// 파이프 입력 연결
+        			close(pfd[1]);
+				dup2(pfd[0], 0);
+        			close(pfd[0]);
+
+        			// 두 번째 명령 실행
+        			execvp(argv2[0], argv2);
+        			perror("execvp");
+        			exit(1);
+    			} else if (pid < 0) {
+        			perror("fork failed");
+        			exit(1);
+    			}
+
+  			 // 부모 프로세스: 파이프 닫기
+   			 close(pfd[0]);
+  			 close(pfd[1]);
+
+    			// 자식 프로세스 종료 대기
+    			wait(NULL);
+    			wait(NULL);
+		}
+		
+		if(!is_pipe){
 		// 명령어 수행 과정 
 		// 자식 프로세스 생성
 		pid = fork();
@@ -147,8 +221,9 @@ int main(){
     				perror("close");
     				exit(1);
 			}
-		}		
+		}
 
+	}
 	}
 }
 
