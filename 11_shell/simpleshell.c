@@ -5,16 +5,28 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <signal.h>
+
+pid_t pid;
+
 // 명령어와 인자를 구분하는 함수
 int getargs(char *cmd, char **argv);
+
+// 시그널 처리 함수 
+void handler(int signo);
 
 int main(){
 	char buf[256];
 	char *argv[50];
 	int narg;
-	pid_t pid;
 	int is_background;
 	int is_error;
+
+	// 부모 프로세스(쉘)은 인터럽트 시그널 무시하고 자식 프로세스에게 시그널 전송
+	struct sigaction p_act;
+	p_act.sa_handler = handler;
+	sigfillset(&(p_act.sa_mask));
+	sigaction(SIGINT, &p_act, NULL);
 
 	while(1){
 		is_error = 0;
@@ -26,6 +38,9 @@ int main(){
 		is_background = 0;
 		// 명령어와 인자를 구분
 		narg = getargs(buf, argv);
+		if(narg == 0){
+			continue;
+		}
 			
 		// 1. exit 이면 탈출할 것
 		if(strcmp(argv[0], "exit") == 0)
@@ -148,4 +163,10 @@ int getargs(char *cmd, char **argv){
 
 	argv[narg] = NULL;
 	return narg;
+}
+
+// 자식에게 신호 전달
+void handler(int signo){
+	if(pid > 0)
+		kill(pid, signo);
 }
