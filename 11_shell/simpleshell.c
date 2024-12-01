@@ -26,8 +26,12 @@ int main(){
 	struct sigaction p_act;
 	p_act.sa_handler = handler;
 	sigfillset(&(p_act.sa_mask));
+	
+	// 인터럽트 같은 신호들은 부모(쉘)가 아닌 자식(실행중인 명령어)에게 전달
 	sigaction(SIGINT, &p_act, NULL);
-
+	sigaction(SIGQUIT, &p_act, NULL);
+	sigaction(SIGTSTP, &p_act, NULL);
+	
 	while(1){
 		is_error = 0;
 		// 사용자 명령 입력 
@@ -54,7 +58,7 @@ int main(){
 		}
 
 
-		// 3. 리다이렉션 및 파이프
+		// 4. 리다이렉션 및 파이프
 		int i;
 		int fd = -1;
 		
@@ -167,6 +171,7 @@ int getargs(char *cmd, char **argv){
 
 // 자식에게 신호 전달
 void handler(int signo){
-	if(pid > 0)
+	if(pid > 0){
 		kill(pid, signo);
+	}
 }
